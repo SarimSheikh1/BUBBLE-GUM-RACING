@@ -287,9 +287,28 @@
             sprites: {},
             bgSrc: {},
             run: function(cb) {
-                let tasks = 8 + 5 + 3; // karts, sceneries, items = 16
+                let tasks = 8 + 5 + 3 + 2; // karts, sceneries, items, traffic/banner
                 let done = 0;
                 let inc = () => { done++; document.getElementById('loading-progress').style.width = (done/tasks*100)+'%'; if(done>=tasks) cb(); };
+
+                // Traffic Car (Generic yellow cab)
+                let {c:tc, ctx:tCtx} = this.getCanvas(128, 128);
+                tCtx.fillStyle = 'rgba(0,0,0,0.3)'; tCtx.beginPath(); tCtx.ellipse(64, 110, 50, 10, 0, 0, Math.PI*2); tCtx.fill();
+                tCtx.fillStyle = '#111'; tCtx.beginPath(); tCtx.roundRect(16, 75, 20, 30, 5); tCtx.fill(); tCtx.beginPath(); tCtx.roundRect(92, 75, 20, 30, 5); tCtx.fill(); 
+                tCtx.fillStyle = '#FFD700'; tCtx.beginPath(); tCtx.roundRect(24, 60, 80, 40, 5); tCtx.fill();
+                tCtx.fillStyle = '#DAA520'; tCtx.beginPath(); tCtx.moveTo(34, 60); tCtx.lineTo(94, 60); tCtx.lineTo(84, 30); tCtx.lineTo(44, 30); tCtx.closePath(); tCtx.fill();
+                tCtx.fillStyle = '#87CEEB'; tCtx.beginPath(); tCtx.moveTo(40, 55); tCtx.lineTo(88, 55); tCtx.lineTo(80, 35); tCtx.lineTo(48, 35); tCtx.closePath(); tCtx.fill();
+                tCtx.fillStyle = '#F00'; tCtx.fillRect(28, 70, 15, 10); tCtx.fillRect(85, 70, 15, 10);
+                this.sprites['traffic_car'] = tc; inc();
+
+                // Start/Finish Banner
+                let {c:banner, ctx:bnCtx} = this.getCanvas(256, 128);
+                bnCtx.fillStyle = '#000'; bnCtx.fillRect(123, 32, 10, 96); // Pole
+                bnCtx.fillStyle = '#FF1493'; bnCtx.fillRect(0,0,256,48); // Board
+                bnCtx.strokeStyle = '#FFF'; bnCtx.lineWidth=4; bnCtx.strokeRect(0,0,256,48);
+                bnCtx.fillStyle = '#FFF'; bnCtx.font = 'bold 24px Arial'; bnCtx.textAlign = 'center';
+                bnCtx.fillText("BUBBLE GUM", 128, 20); bnCtx.fillText("RACING", 128, 42);
+                this.sprites['banner'] = banner; inc();
 
                 // Generate 8 Karts
                 for(let i=0; i<8; i++) {
@@ -641,6 +660,10 @@
                     this.addSprite(n, boxTex, 0);
                     this.addSprite(n, boxTex, 0.5);
                 }
+                
+                // Starting line banner
+                this.addSprite(0, AssetGenerator.sprites['banner'], -1.4);
+                this.addSprite(0, AssetGenerator.sprites['banner'],  1.4);
             }
         };
 
@@ -685,7 +708,19 @@
                         let cId = (Game.playerChar + 1 + i + (Game.mode==='multiplayer'?1:0)) % 8;
                         this.cars.push({
                             x: (i%2===0?-0.6:0.6), y: 0, z: - (i+1)*500,
-                            speed: 0, lap: 1, charId: cId, isPlayer: false, offsetTracker: 0, state: 'normal', timer: 0, item: null, finished: false, totalTime: 0
+                            speed: 0, lap: 1, charId: cId, isPlayer: false, offsetTracker: 0, state: 'normal', timer: 0, item: null, finished: false, totalTime: 0,
+                            isTraffic: false
+                        });
+                    }
+
+                    // Spawn neutral traffic cars based on difficulty!
+                    let diffTraffic = { 'easy': 0, 'medium': 10, 'hard': 25, 'extreme': 40, 'impossible': 60 };
+                    let numTraffic = diffTraffic[Game.difficulty] || 0;
+                    for(let i=0; i < numTraffic; i++) {
+                        this.cars.push({
+                            x: (Math.random() * 1.6) - 0.8, y: 0, z: Math.random() * CONFIG.trackLength,
+                            speed: CONFIG.maxSpeed * 0.25, lap: 1, charId: -1, isPlayer: false, offsetTracker: Math.random()*10, state: 'normal', timer: 0, item: null, finished: false, totalTime: 0,
+                            isTraffic: true
                         });
                     }
                 } else {
@@ -741,6 +776,18 @@
                         if (p.speed > CONFIG.offRoadLimit) p.speed += CONFIG.offRoadDecel * dt;
                         p.camera.yOffset = (p.speed > 0) ? (Math.random()*100 - 50) : 0;
                     } else { p.camera.yOffset = 0; }
+
+                    // Kart Bumping Collision!
+                    this.cars.forEach(c => {
+                        let zDist = Math.abs(c.z - p.z);
+                        zDist = Math.min(zDist, CONFIG.trackLength - zDist); // Wrap around distance
+                        if(zDist < 300 && Math.abs(p.x - c.x) < 0.45) {
+                            p.speed *= 0.85; // Bounce off player
+                            p.x += (p.x < c.x ? -0.05 : 0.05); 
+                            c.x += (c.x < p.x ? -0.05 : 0.05); // Push both slightly
+                            if(p.viewIdx === 0 && p.speed > 1000) p.camera.yOffset += 50; 
+                        }
+                    });
 
                     p.speed = MathHelper.limit(p.speed, 0, CONFIG.maxSpeed);
 
@@ -864,14 +911,18 @@
                     }
                     
                     if(car.state !== 'spin') {
-                        car.speed = CONFIG.maxSpeed * 0.95; 
-                        let p1 = this.players[0];
-                        let distToPlayer = car.z + (car.lap*CONFIG.trackLength) - (p1.z + p1.lap*CONFIG.trackLength);
-                        if(distToPlayer < -2000) car.speed *= 1.15;
-                        if(distToPlayer > 2000) car.speed *= 0.85; 
-
+                        if(!car.isTraffic) {
+                            car.speed = CONFIG.maxSpeed * 0.95; 
+                            let p1 = this.players[0];
+                            let distToPlayer = car.z + (car.lap*CONFIG.trackLength) - (p1.z + p1.lap*CONFIG.trackLength);
+                            let rubberBandMin = Game.difficulty === 'impossible' ? -100 : -2000;
+                            let rubberBandMax = Game.difficulty === 'impossible' ? 1000 : 2000;
+                            if(distToPlayer < rubberBandMin) car.speed *= 1.15;
+                            if(distToPlayer > rubberBandMax) car.speed *= 0.85; 
+                        }
                         car.offsetTracker += dt;
-                        car.x += Math.sin(car.offsetTracker) * 0.01; 
+                        let weave = car.isTraffic ? 0.005 : 0.01;
+                        car.x += Math.sin(car.offsetTracker) * weave; 
                         car.x = MathHelper.limit(car.x, -0.9, 0.9);
                     } else {
                         car.speed = 0; 
@@ -994,6 +1045,19 @@
                         this.drawPoly(p1.x - p1.w*1.2, p1.y, p1.x + p1.w*1.2, p1.y, p2.x + p2.w*1.2, p2.y, p2.x - p2.w*1.2, p2.y, segment.color.rumble);
                         this.drawPoly(p1.x - p1.w, p1.y, p1.x + p1.w, p1.y, p2.x + p2.w, p2.y, p2.x - p2.w, p2.y, segment.color.road);
 
+                        // START / FINISH Checkered Line
+                        if(segment.index >= 0 && segment.index < 4) {
+                            let stripW = p1.w * 2;
+                            for(let lane=0; lane<8; lane++) {
+                                let lx1 = (p1.x - p1.w) + (stripW/8)*lane;
+                                let lx2 = (p1.x - p1.w) + (stripW/8)*(lane+1);
+                                let lx3 = (p2.x - p2.w) + (stripW/8)*(lane+1);
+                                let lx4 = (p2.x - p2.w) + (stripW/8)*lane;
+                                this.ctx.fillStyle = (lane + segment.index) % 2 === 0 ? '#FFF' : '#000';
+                                this.ctx.beginPath(); this.ctx.moveTo(lx1, p1.y); this.ctx.lineTo(lx2, p1.y); this.ctx.lineTo(lx3, p2.y); this.ctx.lineTo(lx4, p2.y); this.ctx.fill();
+                            }
+                        }
+
                         // Draw "arrows" (chevrons) on hard turns
                         if(Math.abs(segment.curve) > Track.ROAD.CURVE.EASY && (n % 4 === 0)) {
                             this.ctx.fillStyle = '#FFF';
@@ -1018,7 +1082,7 @@
                         for(let i=0; i<segment.cars.length; i++) {
                             let c = segment.cars[i];
                             let cx = p1.x + (p1.w * c.x * 2);
-                            let carImg = AssetGenerator.sprites['kart_'+c.charId];
+                            let carImg = c.isTraffic ? AssetGenerator.sprites['traffic_car'] : AssetGenerator.sprites['kart_'+c.charId];
                             renderSprites.push({ source: carImg, scale: p1.scale, x: cx, y: p1.y, clip: maxy, alpha: c.isGhost ? 0.3 : 1.0 });
                         }
                         // Render other players
