@@ -22,7 +22,7 @@
         }
         canvas {
             display: block; image-rendering: pixelated; /* Sharp pixel art look */
-            width: 100%; height: 100%; object-fit: contain; background: #87CEEB;
+            width: 100%; height: 100%; object-fit: contain; background: #000;
         }
         #ui-layer {
             position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none;
@@ -100,13 +100,27 @@
             <div id="screen-main-menu" class="screen">
                 <div class="title-logo">Bubble Gum<br>Racing</div>
                 <div style="margin-top: 40px;">
-                    <button class="btn btn-primary" onclick="Game.showCharSelect('quick-race')">Quick Race</button>
-                    <button class="btn btn-primary" onclick="Game.showCharSelect('grand-prix')">Grand Prix</button>
-                    <button class="btn btn-primary" onclick="Game.showCharSelect('time-trial')">Time Trial</button>
-                    <button class="btn btn-secondary" onclick="Game.showCharSelect('multiplayer')" style="background-color: #2196F3;">Local Multiplayer (2P)</button>
+                    <button class="btn btn-primary" onclick="Game.showDifficulty('quick-race')">Quick Race</button>
+                    <button class="btn btn-primary" onclick="Game.showDifficulty('grand-prix')">Grand Prix</button>
+                    <button class="btn btn-primary" onclick="Game.showDifficulty('time-trial')">Time Trial</button>
+                    <button class="btn btn-secondary" onclick="Game.showDifficulty('multiplayer')" style="background-color: #2196F3;">Local Multiplayer (2P)</button>
                 </div>
                 <div style="margin-top: 20px; font-size: 14px; text-shadow: 1px 1px 2px #000;">
                     P1: Arrows/Space | P2: WASD/Shift | Gamepad Supported
+                </div>
+            </div>
+
+            <div id="screen-difficulty" class="screen hidden">
+                <h2>Select Engine Class</h2>
+                <div style="margin-top: 20px;">
+                    <button class="btn btn-success" onclick="Game.setDifficulty('easy')">50cc (Easy)</button>
+                    <button class="btn btn-primary" onclick="Game.setDifficulty('medium')">100cc (Normal)</button>
+                    <button class="btn btn-secondary" onclick="Game.setDifficulty('hard')" style="background-color: var(--color-red);">150cc (Hard)</button>
+                    <br><button class="btn btn-secondary" onclick="Game.setDifficulty('extreme')" style="background-color: #8A2BE2; margin-top:20px;">200cc (EXTREME)</button>
+                    <button class="btn btn-secondary" onclick="Game.setDifficulty('impossible')" style="background-color: #000; margin-top:20px; border-color:#FF0000;">300cc (PROBLEM)</button>
+                </div>
+                <div style="margin-top: 20px;">
+                    <button class="btn btn-secondary" onclick="Game.showMenu('screen-main-menu')">Back</button>
                 </div>
             </div>
 
@@ -137,7 +151,7 @@
                     <div class="hud-box" id="hud-lap">Lap 1/3</div>
                     <div class="hud-box" style="margin-top: 10px;" id="hud-time">00:00.00</div>
                 </div>
-                <!-- <div class="hud-bottom-right"><div class="hud-box" id="hud-speed">0 mph</div></div> -->
+                <div id="lap-message" style="position:absolute; top:40%; left:50%; transform:translate(-50%, -50%); font-size:10vmin; color:#FFD700; -webkit-text-stroke: 3px #FF0000; text-shadow: 4px 4px 0 #000; display:none; animation: bounce 1s infinite;">LAP 2!</div>
             </div>
 
             <!-- Race Ended / Victory Screen -->
@@ -197,13 +211,13 @@
             width: 640, height: 360,
             roadWidth: 2000, segmentLength: 200, rumbleLength: 3, trackLength: 0,
             cameraHeight: 1000, drawDistance: 300, fieldOfView: 100, fogDensity: 5, lanes: 3,
-            maxSpeed: 15000, // Roughly z-units per second
-            accel:  12000,  // z-units per sec^2
+            maxSpeed: 10000, // Roughly z-units per second (Reduced for Easy mode)
+            accel:  9000,  // z-units per sec^2
             breaking: -24000,
             decel: -6000,
-            offRoadDecel: -12000,
+            offRoadDecel: -8000,
             offRoadLimit: 3000,
-            centrifugal: 0.3, // Curve drifting force
+            centrifugal: 0.15, // Curve drifting force (Reduced for better control)
             laps: 3
         };
 
@@ -272,13 +286,48 @@
                 // Generate 8 Karts
                 for(let i=0; i<8; i++) {
                     let {c, ctx} = this.getCanvas(128, 128);
+                    
+                    // Shadow
+                    ctx.fillStyle = 'rgba(0,0,0,0.3)';
+                    ctx.beginPath(); ctx.ellipse(64, 110, 45, 8, 0, 0, Math.PI*2); ctx.fill();
+
+                    // Tires
+                    ctx.fillStyle = '#222';
+                    ctx.beginPath(); ctx.roundRect(16, 75, 24, 30, 6); ctx.fill(); // Left
+                    ctx.beginPath(); ctx.roundRect(88, 75, 24, 30, 6); ctx.fill(); // Right
+                    
+                    // Kart Base / Body
                     ctx.fillStyle = RACERS[i].color;
-                    ctx.fillRect(32, 64, 64, 40); // Body
+                    ctx.beginPath(); ctx.roundRect(28, 70, 72, 35, 10); ctx.fill();
+                    
+                    // Kart Hood / Seat Back
                     ctx.fillStyle = RACERS[i].accent;
-                    ctx.fillRect(40, 48, 48, 16); // Roof/Accent
+                    ctx.beginPath(); ctx.moveTo(40, 70); ctx.lineTo(88, 70); ctx.lineTo(80, 45); ctx.lineTo(48, 45); ctx.closePath(); ctx.fill();
+
+                    // Taillights
+                    ctx.fillStyle = '#F00';
+                    ctx.beginPath(); ctx.roundRect(34, 80, 15, 8, 4); ctx.fill();
+                    ctx.beginPath(); ctx.roundRect(79, 80, 15, 8, 4); ctx.fill();
+                    ctx.fillStyle = '#FFA500';
+                    ctx.beginPath(); ctx.roundRect(36, 82, 11, 4, 2); ctx.fill();
+                    ctx.beginPath(); ctx.roundRect(81, 82, 11, 4, 2); ctx.fill();
+                    
+                    // Exhaust pipe
+                    ctx.fillStyle = '#888';
+                    ctx.beginPath(); ctx.arc(64, 98, 7, 0, Math.PI*2); ctx.fill();
                     ctx.fillStyle = '#111';
-                    ctx.fillRect(20, 80, 16, 24); ctx.fillRect(92, 80, 16, 24); // Tires
-                    // Exhuast logic
+                    ctx.beginPath(); ctx.arc(64, 98, 4, 0, Math.PI*2); ctx.fill();
+                    
+                    // Animal Driver Head
+                    ctx.fillStyle = RACERS[i].color;
+                    ctx.beginPath(); ctx.arc(64, 35, 18, 0, Math.PI*2); ctx.fill();
+                    // Driver Ears (roughly)
+                    ctx.beginPath(); ctx.arc(48, 25, 8, 0, Math.PI*2); ctx.fill();
+                    ctx.beginPath(); ctx.arc(80, 25, 8, 0, Math.PI*2); ctx.fill();
+                    // Animal Goggles/Helmet strap
+                    ctx.strokeStyle = '#222'; ctx.lineWidth = 4;
+                    ctx.beginPath(); ctx.moveTo(46, 35); ctx.lineTo(82, 35); ctx.stroke();
+
                     this.sprites['kart_'+i] = c;
                     inc();
                 }
@@ -402,8 +451,27 @@
                 Engine.running = false;
             },
 
-            showCharSelect: function(mode) { 
-                this.mode = mode; 
+            showDifficulty: function(mode) {
+                this.mode = mode;
+                this.showMenu('screen-difficulty');
+            },
+            
+            setDifficulty: function(diff) {
+                if(diff === 'easy') {
+                    CONFIG.maxSpeed = 10000; CONFIG.centrifugal = 0.15; CONFIG.offRoadDecel = -8000;
+                } else if(diff === 'medium') {
+                    CONFIG.maxSpeed = 15000; CONFIG.centrifugal = 0.25; CONFIG.offRoadDecel = -12000;
+                } else if(diff === 'hard') {
+                    CONFIG.maxSpeed = 19000; CONFIG.centrifugal = 0.35; CONFIG.offRoadDecel = -16000;
+                } else if(diff === 'extreme') {
+                    CONFIG.maxSpeed = 24000; CONFIG.centrifugal = 0.45; CONFIG.offRoadDecel = -22000;
+                } else if(diff === 'impossible') {
+                    CONFIG.maxSpeed = 30000; CONFIG.centrifugal = 0.55; CONFIG.offRoadDecel = -25000;
+                }
+                this.showCharSelect();
+            },
+
+            showCharSelect: function() { 
                 this.showMenu('screen-char-select'); 
             },
             showTrackSelect: function() { 
@@ -619,9 +687,18 @@
                 if(type === 'bounce') { car.speed = -CONFIG.maxSpeed*0.5; AudioSys.playTone(600, 'sine', 0.3); }
             },
 
-            findSegment: function(z) { return Track.segments[Math.floor(z/CONFIG.segmentLength) % Track.segments.length]; },
+            findSegment: function(z) { 
+                let index = Math.floor(z/CONFIG.segmentLength) % Track.segments.length;
+                if(index < 0) index += Track.segments.length;
+                return Track.segments[index]; 
+            },
             
             update: function(dt) {
+                // Clear cars from segments for loop
+                for(let i=0; i<Track.segments.length; i++) {
+                    Track.segments[i].cars = [];
+                }
+
                 // Update Players
                 this.players.forEach(p => {
                     let playerSeg = this.findSegment(p.z);
@@ -650,6 +727,15 @@
                         p.lap++;
                         if(p.lap > CONFIG.laps) {
                             p.finished = true; p.lap = CONFIG.laps; p.z = CONFIG.trackLength; 
+                        } else {
+                            if(p.isPlayer && p.viewIdx === 0) {
+                                let msg = document.getElementById('lap-message');
+                                msg.innerText = (p.lap === CONFIG.laps) ? "FINAL LAP!" : "LAP " + p.lap + "!";
+                                msg.style.display = 'block';
+                                setTimeout(() => msg.style.display = 'none', 2000);
+                                AudioSys.playTone(800, 'square', 0.1);
+                                setTimeout(() => AudioSys.playTone(1000, 'square', 0.2), 150);
+                            }
                         }
                     }
 
@@ -703,6 +789,9 @@
                         p.camera.x = p.x * CONFIG.roadWidth;
                         p.camera.z = p.z - (CONFIG.cameraHeight * p.camera.depth); 
                     }
+                    p.camera.z = p.camera.z % CONFIG.trackLength;
+                    if(p.camera.z < 0) p.camera.z += CONFIG.trackLength;
+                    
                     p.camera.y = playerSeg.p1.world.y + CONFIG.cameraHeight + (p.camera.yOffset||0);
                 });
 
@@ -881,6 +970,20 @@
                         this.drawPoly(0, p1.y, viewW, p1.y, viewW, p2.y, 0, p2.y, segment.color.grass);
                         this.drawPoly(p1.x - p1.w*1.2, p1.y, p1.x + p1.w*1.2, p1.y, p2.x + p2.w*1.2, p2.y, p2.x - p2.w*1.2, p2.y, segment.color.rumble);
                         this.drawPoly(p1.x - p1.w, p1.y, p1.x + p1.w, p1.y, p2.x + p2.w, p2.y, p2.x - p2.w, p2.y, segment.color.road);
+
+                        // Draw "arrows" (chevrons) on hard turns
+                        if(Math.abs(segment.curve) > Track.ROAD.CURVE.EASY && (n % 4 === 0)) {
+                            this.ctx.fillStyle = '#FFF';
+                            let signDir = segment.curve > 0 ? 1 : -1;
+                            let aw = p1.w * 0.1;
+                            let cx = p1.x + (p1.w * 0.8 * signDir);
+                            this.ctx.beginPath();
+                            this.ctx.moveTo(cx, p1.y - 2);
+                            this.ctx.lineTo(cx + aw*signDir, p1.y - 6);
+                            this.ctx.lineTo(cx, p1.y - 10);
+                            this.ctx.lineTo(cx - aw*signDir, p1.y - 6);
+                            this.ctx.fill();
+                        }
 
                         maxy = p1.y;
 
